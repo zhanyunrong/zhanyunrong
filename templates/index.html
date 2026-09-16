@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雙人聊天室</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-sizing: border-box;
+        }
+        h2 {
+            margin-top: 5px;
+            color: #ffffff;
+        }
+        #auth-screen {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 320px;
+            margin-top: 20px;
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            box-sizing: border-box;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-group label {
+            font-size: 13px;
+            color: #aaa;
+        }
+        .avatar-crop-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            background: #252525;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px dashed #555;
+        }
+        .crop-viewport {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            overflow: hidden;
+            position: relative;
+            background: #000;
+            cursor: grab;
+            border: 2px solid #4CAF50;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            touch-action: none;
+        }
+        .crop-viewport:active {
+            cursor: grabbing;
+        }
+        #crop-image, #edit-crop-image {
+            position: absolute;
+            user-select: none;
+            pointer-events: none;
+            max-width: none;
+        }
+        .zoom-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            font-size: 12px;
+            color: #bbb;
+        }
+        .zoom-slider-container input {
+            flex: 1;
+        }
+
+        #chat-screen {
+            display: none;
+            width: 100%;
+            max-width: 400px;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        #profile-screen {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 320px;
+            margin-top: 20px;
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            box-sizing: border-box;
+        }
+
+        #chat-box {
+            width: 100%;
+            height: 45vh;
+            border: 1px solid #333;
+            background: #1e1e1e;
+            border-radius: 8px;
+            overflow-y: scroll;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        .message-row {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            position: relative;
+        }
+        .msg-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .avatar-img {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .message-actions {
+            margin-top: 5px;
+            display: flex;
+            gap: 5px;
+        }
+        .message-actions button {
+            padding: 3px 8px;
+            font-size: 12px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            background: #444;
+            color: #fff;
+        }
+        .input-group {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        input[type="text"], input[type="password"], input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: #fff;
+            box-sizing: border-box;
+        }
+        .btn-row {
+            display: flex;
+            gap: 8px;
+        }
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #4CAF50;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button.secondary {
+            background: #2196F3;
+        }
+        button.delete-btn {
+            background: #d32f2f;
+        }
+        button.warning-btn {
+            background: #ff9800;
+        }
+        button:active {
+            opacity: 0.8;
+        }
+        .toggle-auth {
+            text-align: center;
+            color: #4CAF50;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen">
+        <h2 id="auth-title" style="text-align:center;">帳號登入</h2>
+        
+        <div class="form-group">
+            <label>帳號</label>
+            <input type="text" id="username-input" placeholder="請輸入帳號">
+        </div>
+        <div class="form-group">
+            <label>密碼</label>
+            <input type="password" id="password-input" placeholder="請輸入密碼">
+        </div>
+        
+        <div class="form-group" id="confirm-password-group" style="display:none;">
+            <label>確認密碼</label>
+            <input type="password" id="confirm-password-input" placeholder="請再次輸入密碼">
+        </div>
+        
+        <div class="form-group" id="name-group" style="display:none;">
+            <label>顯示名稱 (暱稱)</label>
+            <input type="text" id="name-input" placeholder="例如: 管理員">
+        </div>
+        
+        <div class="form-group" id="avatar-group" style="display:none;">
+            <label>個人頭像 (選填)</label>
+            <input type="file" id="reg-avatar-input" accept="image/*">
+            
+            <div class="avatar-crop-container" id="crop-container">
+                <span style="font-size:11px; color:#aaa;">拖曳圖片移動位置，或調整縮放</span>
+                <div class="crop-viewport" id="crop-viewport">
+                    <img id="crop-image" src="" alt="頭像預覽">
+                </div>
+                <div class="zoom-slider-container">
+                    <span>縮放</span>
+                    <input type="range" id="zoom-slider" min="0.5" max="3" step="0.05" value="1">
+                </div>
+            </div>
+        </div>
+
+        <button id="auth-btn" onclick="handleAuth()">登入</button>
+        <div class="toggle-auth" id="toggle-text" onclick="toggleMode()">沒有帳號？點此註冊</div>
+    </div>
+
+    <div id="profile-screen">
+        <h2 style="text-align:center;">修改帳號資料</h2>
+        
+        <div class="form-group">
+            <label>顯示名稱 (暱稱)</label>
+            <input type="text" id="edit-name-input" placeholder="請輸入新的暱稱">
+        </div>
+        
+        <div class="form-group">
+            <label>更換個人頭像 (選填)</label>
+            <input type="file" id="edit-avatar-input" accept="image/*">
+            
+            <div class="avatar-crop-container" id="edit-crop-container">
+                <span style="font-size:11px; color:#aaa;">拖曳圖片移動位置，或調整縮放</span>
+                <div class="crop-viewport" id="edit-crop-viewport">
+                    <img id="edit-crop-image" src="" alt="頭像預覽">
+                </div>
+                <div class="zoom-slider-container">
+                    <span>縮放</span>
+                    <input type="range" id="edit-zoom-slider" min="0.5" max="3" step="0.05" value="1">
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="secondary" onclick="saveProfile()">儲存修改</button>
+            <button class="delete-btn" onclick="closeProfile()">返回聊天室</button>
+        </div>
+    </div>
+
+    <div id="chat-screen">
+        <div style="width:100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <h2 id="room-title" style="margin:0;">2人專屬聊天室</h2>
+            <button class="warning-btn" style="flex:0; padding: 6px 12px; font-size: 13px;" onclick="openProfile()">管理帳號</button>
+        </div>
+        
+        <div id="chat-box"></div>
+        
+        <div class="input-group">
+            <input type="text" id="message-input" placeholder="輸入訊息...">
+            <div class="btn-row">
+                <button onclick="sendMessage()">發送訊息</button>
+            </div>
+            
+            <input type="file" id="image-input" accept="image/*">
+            <div class="btn-row">
+                <button onclick="sendImage()">發送圖片</button>
+                <button class="delete-btn" onclick="clearHistory()">刪除全部紀錄</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 請求瀏覽器通知權限
+        if (window.Notification && Notification.permission !== "granted") {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    console.log("已獲得通知權限");
+                }
+            });
+        }
+
+        const socket = io();
+        let currentUser = null;
+        let isRegisterMode = false;
+
+        let imgObj = new Image();
+        let imgScale = 1, imgX = 0, imgY = 0, isDragging = false;
+        let startX = 0, startY = 0;
+        const viewport = document.getElementById('crop-viewport');
+        const cropImg = document.getElementById('crop-image');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const cropContainer = document.getElementById('crop-container');
+
+        let editImgObj = new Image();
+        let editImgScale = 1, editImgX = 0, editImgY = 0, isEditDragging = false;
+        let editStartX = 0, editStartY = 0;
+        const editViewport = document.getElementById('edit-crop-viewport');
+        const editCropImg = document.getElementById('edit-crop-image');
+        const editZoomSlider = document.getElementById('edit-zoom-slider');
+        const editCropContainer = document.getElementById('edit-crop-container');
+
+        document.getElementById('reg-avatar-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    imgObj.onload = function() {
+                        cropContainer.style.display = 'flex';
+                        imgScale = Math.max(120 / imgObj.width, 120 / imgObj.height);
+                        zoomSlider.min = imgScale * 0.5;
+                        zoomSlider.max = imgScale * 4;
+                        zoomSlider.value = imgScale;
+                        imgX = (120 - imgObj.width * imgScale) / 2;
+                        imgY = (120 - imgObj.height * imgScale) / 2;
+                        updateTransform();
+                    };
+                    imgObj.src = event.target.result;
+                    cropImg.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function updateTransform() {
+            cropImg.style.width = (imgObj.width * imgScale) + 'px';
+            cropImg.style.height = (imgObj.height * imgScale) + 'px';
+            cropImg.style.left = imgX + 'px';
+            cropImg.style.top = imgY + 'px';
+        }
+
+        zoomSlider.addEventListener('input', function() {
+            const oldScale = imgScale;
+            imgScale = parseFloat(this.value);
+            imgX = 60 - (60 - imgX) * (imgScale / oldScale);
+            imgY = 60 - (60 - imgY) * (imgScale / oldScale);
+            updateTransform();
+        });
+
+        viewport.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX - imgX; startY = e.clientY - imgY; e.preventDefault(); });
+        window.addEventListener('mousemove', (e) => { if (isDragging) { imgX = e.clientX - startX; imgY = e.clientY - startY; updateTransform(); } });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+        viewport.addEventListener('touchstart', (e) => { if (e.touches.length === 1) { isDragging = true; startX = e.touches[0].clientX - imgX; startY = e.touches[0].clientY - imgY; e.preventDefault(); } });
+        window.addEventListener('touchmove', (e) => { if (isDragging && e.touches.length === 1) { imgX = e.touches[0].clientX - startX; imgY = e.touches[0].clientY - startY; updateTransform(); } });
+        window.addEventListener('touchend', () => { isDragging = false; });
+
+        function getCroppedAvatarBase64() {
+            if (!cropImg.src || cropContainer.style.display === 'none') return currentUser ? currentUser.avatar : '';
+            const canvas = document.createElement('canvas');
+            canvas.width = 120; canvas.height = 120;
+            const ctx = canvas.getContext('2d');
+            ctx.beginPath(); ctx.arc(60, 60, 60, 0, Math.PI * 2, true); ctx.closePath(); ctx.clip();
+            ctx.drawImage(imgObj, imgX, imgY, imgObj.width * imgScale, imgObj.height * imgScale);
+            return canvas.toDataURL('image/jpeg', 0.85);
+        }
+
+        document.getElementById('edit-avatar-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    editImgObj.onload = function() {
+                        editCropContainer.style.display = 'flex';
+                        editImgScale = Math.max(120 / editImgObj.width, 120 / editImgObj.height);
+                        editZoomSlider.min = editImgScale * 0.5;
+                        editZoomSlider.max = editImgScale * 4;
+                        editZoomSlider.value = editImgScale;
+                        editImgX = (120 - editImgObj.width * editImgScale) / 2;
+                        editImgY = (120 - editImgObj.height * editImgScale) / 2;
+                        updateEditTransform();
+                    };
+                    editImgObj.src = event.target.result;
+                    editCropImg.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function updateEditTransform() {
+            editCropImg.style.width = (editImgObj.width * editImgScale) + 'px';
+            editCropImg.style.height = (editImgObj.height * editImgScale) + 'px';
+            editCropImg.style.left = editImgX + 'px';
+            editCropImg.style.top = editImgY + 'px';
+        }
+
+        editZoomSlider.addEventListener('input', function() {
+            const oldScale = editImgScale;
+            editImgScale = parseFloat(this.value);
+            editImgX = 60 - (60 - editImgX) * (editImgScale / oldScale);
+            editImgY = 60 - (60 - editImgY) * (editImgScale / oldScale);
+            updateEditTransform();
+        });
+
+        editViewport.addEventListener('mousedown', (e) => { isEditDragging = true; editStartX = e.clientX - editImgX; editStartY = e.clientY - editImgY; e.preventDefault(); });
+        window.addEventListener('mousemove', (e) => { if (isEditDragging) { editImgX = e.clientX - editStartX; editImgY = e.clientY - editStartY; updateEditTransform(); } });
+        window.addEventListener('mouseup', () => { isEditDragging = false; });
+        editViewport.addEventListener('touchstart', (e) => { if (e.touches.length === 1) { isEditDragging = true; editStartX = e.touches[0].clientX - editImgX; editStartY = e.touches[0].clientY - editImgY; e.preventDefault(); } });
+        window.addEventListener('touchmove', (e) => { if (isEditDragging && e.touches.length === 1) { editImgX = e.touches[0].clientX - editStartX; editImgY = e.touches[0].clientY - editStartY; updateEditTransform(); } });
+        window.addEventListener('touchend', () => { isEditDragging = false; });
+
+        function getEditCroppedAvatarBase64() {
+            if (!editCropImg.src || editCropContainer.style.display === 'none') return currentUser ? currentUser.avatar : '';
+            const canvas = document.createElement('canvas');
+            canvas.width = 120; canvas.height = 120;
+            const ctx = canvas.getContext('2d');
+            ctx.beginPath(); ctx.arc(60, 60, 60, 0, Math.PI * 2, true); ctx.closePath(); ctx.clip();
+            ctx.drawImage(editImgObj, editImgX, editImgY, editImgObj.width * editImgScale, editImgObj.height * editImgScale);
+            return canvas.toDataURL('image/jpeg', 0.85);
+        }
+
+        function toggleMode() {
+            isRegisterMode = !isRegisterMode;
+            const title = document.getElementById('auth-title');
+            const btn = document.getElementById('auth-btn');
+            const toggleText = document.getElementById('toggle-text');
+            const confirmPwGroup = document.getElementById('confirm-password-group');
+            const nameGroup = document.getElementById('name-group');
+            const avatarGroup = document.getElementById('avatar-group');
+
+            if (isRegisterMode) {
+                title.innerText = '註冊新帳號';
+                btn.innerText = '註冊';
+                btn.className = 'secondary';
+                toggleText.innerText = '已經有帳號了？點此登入';
+                confirmPwGroup.style.display = 'flex';
+                nameGroup.style.display = 'flex';
+                avatarGroup.style.display = 'flex';
+            } else {
+                title.innerText = '帳號登入';
+                btn.innerText = '登入';
+                btn.className = '';
+                toggleText.innerText = '沒有帳號？點此註冊';
+                confirmPwGroup.style.display = 'none';
+                nameGroup.style.display = 'none';
+                avatarGroup.style.display = 'none';
+            }
+        }
+
+        function handleAuth() {
+            const username = document.getElementById('username-input').value.trim();
+            const password = document.getElementById('password-input').value;
+
+            if (!username || !password) {
+                alert("請填寫帳號與密碼！");
+                return;
+            }
+
+            if (isRegisterMode) {
+                const confirmPassword = document.getElementById('confirm-password-input').value;
+                const name = document.getElementById('name-input').value.trim();
+                if (!confirmPassword || !name) {
+                    alert("請完整填寫所有欄位！");
+                    return;
+                }
+                if (password !== confirmPassword) {
+                    alert("兩次輸入的密碼不相符！");
+                    return;
+                }
+                const finalAvatar = getCroppedAvatarBase64();
+                socket.emit('register', {
+                    username: username,
+                    password: password,
+                    confirm_password: confirmPassword,
+                    name: name,
+                    avatar: finalAvatar
+                });
+            } else {
+                socket.emit('login', { username: username, password: password });
+            }
+        }
+
+        function openProfile() {
+            document.getElementById('chat-screen').style.display = 'none';
+            document.getElementById('profile-screen').style.display = 'flex';
+            document.getElementById('edit-name-input').value = currentUser.name;
+            editCropContainer.style.display = 'none';
+            document.getElementById('edit-avatar-input').value = '';
+        }
+
+        function closeProfile() {
+            document.getElementById('profile-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'flex';
+        }
+
+        function saveProfile() {
+            const newName = document.getElementById('edit-name-input').value.trim();
+            if (!newName) {
+                alert("顯示名稱不能為空！");
+                return;
+            }
+            let newAvatar = currentUser.avatar;
+            if (editCropContainer.style.display !== 'none') {
+                newAvatar = getEditCroppedAvatarBase64();
+            }
+            socket.emit('update_profile', {
+                username: currentUser.username,
+                name: newName,
+                avatar: newAvatar
+            });
+        }
+
+        socket.on('update_success', function(data) {
+            currentUser.name = data.name;
+            currentUser.avatar = data.avatar;
+            document.getElementById('room-title').innerText = `${currentUser.name} 的聊天室`;
+            alert(data.message);
+            closeProfile();
+        });
+
+        socket.on('update_fail', function(data) {
+            alert(data.message);
+        });
+
+        socket.on('register_success', function(data) {
+            alert(data.message);
+            toggleMode();
+        });
+
+        socket.on('register_fail', function(data) {
+            alert(data.message);
+        });
+
+        socket.on('login_success', function(data) {
+            currentUser = data;
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'flex';
+            document.getElementById('room-title').innerText = `${currentUser.name} 的聊天室`;
+        });
+
+        socket.on('login_fail', function(data) {
+            alert(data.message);
+        });
+
+        socket.on('receive_message', function(data) {
+            const div = document.createElement('div');
+            div.className = 'message-row';
+            div.id = `msg-${data.id}`;
+            
+            let contentHtml = '';
+            if (data.type === 'text') {
+                contentHtml = `<span>${data.content}</span>`;
+            } else if (data.type === 'image') {
+                contentHtml = `<br><img src="${data.content}" width="150" style="border-radius: 8px; margin-top: 5px;">`;
+            }
+            
+            let editedText = (data.type === 'text' && data.edited) ? ' <small style="color:#888;">(已編輯)</small>' : '';
+            
+            let avatarHtml = '';
+            if (data.avatar && data.avatar.trim() !== '') {
+                avatarHtml = `<img src="${data.avatar}" class="avatar-img">`;
+            }
+
+            div.innerHTML = `
+                <div class="msg-header">
+                    ${avatarHtml}
+                    <b>${data.senderName}</b>
+                </div>
+                <div>${contentHtml}${editedText}</div>
+            `;
+
+            if (currentUser && data.sender === currentUser.username) {
+                let actionsHtml = '<div class="message-actions">';
+                if (data.type === 'text') {
+                    actionsHtml += `<button onclick="editMessage('${data.id}')">編輯</button>`;
+                }
+                actionsHtml += `<button onclick="deleteMessage('${data.id}')" style="background:#a94442;">收回</button>`;
+                actionsHtml += '</div>';
+                div.innerHTML += actionsHtml;
+            }
+
+            const chatBox = document.getElementById('chat-box');
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            if (currentUser && data.sender !== currentUser.username) {
+                if (window.Notification && Notification.permission === "granted") {
+                    let notifBody = data.type === 'text' ? data.content : '[傳送了一張圖片]';
+                    new Notification(`${data.senderName} 傳來新訊息`, {
+                        body: notifBody,
+                        icon: data.avatar || ''
+                    });
+                }
+            }
+        });
+
+        socket.on('message_edited', function(data) {
+            const msgDiv = document.getElementById(`msg-${data.id}`);
+            if (msgDiv) {
+                const span = msgDiv.querySelector('span');
+                if (span) span.innerText = data.content;
+                if (!msgDiv.innerHTML.includes('(已編輯)')) {
+                    const header = msgDiv.querySelector('.msg-header');
+                    header.insertAdjacentHTML('afterend', ' <small style="color:#888;">(已編輯)</small>');
+                }
+            }
+        });
+
+        socket.on('message_deleted', function(data) {
+            const msgDiv = document.getElementById(`msg-${data.id}`);
+            if (msgDiv) msgDiv.remove();
+        });
+
+        socket.on('history_cleared', function() {
+            document.getElementById('chat-box').innerHTML = '<p style="color: #888; text-align: center;">--- 聊天記錄已被清除 ---</p>';
+        });
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            if (!input.value.trim() || !currentUser) return;
+            socket.emit('send_message', {
+                type: 'text',
+                sender: currentUser.username,
+                senderName: currentUser.name,
+                avatar: currentUser.avatar,
+                content: input.value
+            });
+            input.value = '';
+        }
+
+        function sendImage() {
+            const fileInput = document.getElementById('image-input');
+            if (fileInput.files.length === 0 || !currentUser) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                socket.emit('send_message', {
+                    type: 'image',
+                    sender: currentUser.username,
+                    senderName: currentUser.name,
+                    avatar: currentUser.avatar,
+                    content: e.target.result
+                });
+            };
+            reader.readAsDataURL(fileInput.files[0]);
+            fileInput.value = '';
+        }
+
+        function editMessage(id) {
+            const newText = prompt("請輸入修改後的內容：");
+            if (newText !== null && newText.trim() !== "") {
+                socket.emit('edit_message', { id: id, content: newText });
+            }
+        }
+
+        function deleteMessage(id) {
+            if (confirm("確定要收回這則訊息嗎？")) {
+                socket.emit('delete_message', { id: id });
+            }
+        }
+
+        function clearHistory() {
+            const pwd = prompt("請輸入密碼以刪除全部記錄：");
+            if (pwd === "0617") {
+                socket.emit('clear_history', { password: pwd });
+            } else if (pwd !== null) {
+                alert("密碼錯誤！");
+            }
+        }
+    </script>
+</body>
+</html>
+
